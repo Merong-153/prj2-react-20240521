@@ -1,11 +1,14 @@
 import { useNavigate, useParams } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import axios from "axios";
 import {
   Box,
   Button,
+  Flex,
   FormControl,
   FormLabel,
+  Heading,
+  Image,
   Input,
   Modal,
   ModalBody,
@@ -13,15 +16,30 @@ import {
   ModalFooter,
   ModalHeader,
   ModalOverlay,
+  Spacer,
   Spinner,
   Textarea,
+  Tooltip,
   useDisclosure,
   useToast,
 } from "@chakra-ui/react";
+import { LoginContext } from "../../component/LoginProvider.jsx";
+import { faHeart as fullHeart } from "@fortawesome/free-solid-svg-icons";
+import { faHeart as emptyHeart } from "@fortawesome/free-regular-svg-icons";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { CommentComponent } from "../../component/comment/CommentComponent.jsx";
 
 export function BoardView() {
   const { id } = useParams();
   const [board, setBoard] = useState(null);
+
+  const [like, setLike] = useState({
+    like: false,
+    count: 0,
+  });
+
+  const [isLikeProcessing, setIsLikeProcessing] = useState(false);
+  const account = useContext(LoginContext);
   const toast = useToast();
   const navigate = useNavigate();
   const { isOpen, onClose, onOpen } = useDisclosure();
@@ -29,7 +47,10 @@ export function BoardView() {
   useEffect(() => {
     axios
       .get(`/api/board/${id}`)
-      .then((res) => setBoard(res.data))
+      .then((res) => {
+        setBoard(res.data.board);
+        setLike(res.data.like);
+      })
       .catch((err) => {
         if (err.response.status === 404) {
           toast({
@@ -44,7 +65,11 @@ export function BoardView() {
 
   function handleClickRemove() {
     axios
-      .delete(`/api/board/${id}`)
+      .delete(`/api/board/${id}`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      })
       .then(() => {
         toast({
           status: "success",
@@ -69,9 +94,48 @@ export function BoardView() {
     return <Spinner />;
   }
 
+  function handleClickLike() {
+    if (!account.isLoggedIn()) {
+      return;
+    }
+    setIsLikeProcessing(true);
+    axios
+      .put(`/api/board/like`, { boardId: board.id })
+      .then((res) => {
+        setLike(res.data);
+      })
+      .catch(() => {})
+      .finally(() => {
+        setIsLikeProcessing(false);
+      });
+  }
+
   return (
     <Box>
-      <Box>{board.id}번 게시물</Box>
+      <Flex>
+        <Heading>{board.id}번 게시물</Heading>
+        <Spacer />
+        {isLikeProcessing || (
+          <Flex>
+            <Tooltip
+              isDisabled={account.isLoggedIn()}
+              hasArrow
+              label="로그인 해주세요."
+            >
+              <Box onClick={handleClickLike} cursor="pointer" fontSize="3xl">
+                {like.like && <FontAwesomeIcon icon={fullHeart} />}
+                {like.like || <FontAwesomeIcon icon={emptyHeart} />}
+              </Box>
+            </Tooltip>
+            <Box fontSize="3xl">{like.count}</Box>
+          </Flex>
+        )}
+        {isLikeProcessing && (
+          <Box pr={3}>
+            <Spinner />
+          </Box>
+        )}
+      </Flex>
       <Box>
         <FormControl>
           <FormLabel>제목</FormLabel>
@@ -85,6 +149,14 @@ export function BoardView() {
         </FormControl>
       </Box>
       <Box>
+        {board.fileList &&
+          board.fileList.map((file) => (
+            <Box border={"2px solid black"} m={3} key={file.name}>
+              <Image src={file.src} />
+            </Box>
+          ))}
+      </Box>
+      <Box>
         <FormControl>
           <FormLabel>작성자</FormLabel>
           <Input value={board.writer} readOnly />
@@ -94,17 +166,21 @@ export function BoardView() {
         <FormControl>작성일시</FormControl>
         <Input type={"datetime-local"} value={board.inserted} readOnly />
       </Box>
-      <Box>
-        <Button
-          colorScheme={"purple"}
-          onClick={() => navigate(`/edit/${board.id}`)}
-        >
-          수정
-        </Button>
-        <Button colorScheme={"red"} onClick={onOpen}>
-          삭제
-        </Button>
-      </Box>
+      {account.hasAccess(board.memberId) && (
+        <Box>
+          <Button
+            colorScheme={"purple"}
+            onClick={() => navigate(`/edit/${board.id}`)}
+          >
+            수정
+          </Button>
+          <Button colorScheme={"red"} onClick={onOpen}>
+            삭제
+          </Button>
+        </Box>
+      )}
+
+      <CommentComponent boardId={board.id} />
 
       <Modal isOpen={isOpen} onClose={onClose}>
         <ModalOverlay />
